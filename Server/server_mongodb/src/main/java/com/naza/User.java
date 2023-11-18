@@ -73,7 +73,7 @@ public class User {
      */
     public User(String username, String password, String salt) {
         this.username = username;
-        this.salt = generateSalt();
+        this.salt = salt;
         this.password = get_SHA_512_SecurePassword(password, salt);
         this.records = new ArrayList<ObjectId>();
     }
