@@ -15,13 +15,23 @@ import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
 
+/**
+ * The main class that represents the server application.
+ */
 public class App {
-    private static final int PORT = 8888;
+    private static int PORT = 8888;
     private static final String KEYSTORE_PATH = System.getProperty("user.dir") + "/certs/keystore.jks";
     private static final String KEYSTORE_PASSWORD = "password";
 
     public static void main(String[] args) throws IOException {
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Enter the server port: ");
+        PORT = scanner.nextInt();
+        scanner.close();
+
         SSLServerSocket serverSocket = createSSLServerSocket();
+        MongoConnect mongoConnect = new MongoConnect();
 
         System.out.println("Server started. Listening on port " + PORT);
 
@@ -30,18 +40,21 @@ public class App {
                 SSLSocket clientSocket = (SSLSocket) serverSocket.accept();
 
                 // Handle client communication in a separate thread
-                new Thread(new ClientHandler(clientSocket)).start();
+                new Thread(new ClientHandler(clientSocket, mongoConnect)).start();
             }
         } finally {
+            mongoConnect.close();
             serverSocket.close();
         }
     }
 
     private static class ClientHandler implements Runnable {
         private final SSLSocket clientSocket;
+        private final MongoConnect mongoConnect;
 
-        public ClientHandler(SSLSocket clientSocket) {
+        public ClientHandler(SSLSocket clientSocket, MongoConnect mongoConnect) {
             this.clientSocket = clientSocket;
+            this.mongoConnect = mongoConnect;
             this.run();
         }
 
@@ -53,43 +66,84 @@ public class App {
                 String[] request;
                 String requestBody;
                 String requestMethod;
-                MongoConnect mongoConnect = new MongoConnect();
+                User user = new User();
                 mongoConnect.init();
 
                 request = decode(reader.readLine()).split(" ", 2);
+
                 requestMethod = request[0];
                 requestBody = request[1];
 
-                if (requestMethod == "login") {
+                System.out.println("Received from client: " + requestMethod);
+
+                if (requestMethod.equals("login")) {
 
                     try {
-                        User user = mongoConnect.getUser(requestBody.split(" ")[0]);
+                        user = mongoConnect.getUser(requestBody.split(" ")[0]);
                         User findUser = new User(requestBody.split(" ")[0], requestBody.split(" ")[1], user.getSalt());
-                        if (findUser == user) {
+                        if (findUser.equals(user)) {
                             writer.println(encode("200 Login successful"));
                         } else {
-                            writer.println(decode("401 Login failed"));
+                            writer.println(encode("401 Login failed. Password incorrect"));
+                            System.err.println("401 Login failed. Password incorrect");
+                            return;
                         }
                     } catch (AuthError e) {
-                        writer.println(decode("401 Login failed"));
+                        writer.println(encode("401 Login failed. User not found"));
+                        System.err.println("401 Login failed. User not found");
+                        return;
                     }
 
-                } else if (requestMethod == "signup") {
+                } else if (requestMethod.equals("signup")) {
                     try {
-                        User user = new User(requestBody.split(" ")[0], requestBody.split(" ")[1]);
+                        user = new User(requestBody.split(" ")[0], requestBody.split(" ")[1]);
                         mongoConnect.insertUser(user);
+                        writer.println(encode("200 Signup successful"));
+                    } catch (AuthError e) {
+                        writer.println(encode("401 Signup failed. User already exists"));
+                        System.err.println("401 Signup failed. User already exists");
+                        return;
                     } catch (Exception e) {
-                        writer.println(decode("401 Signup failed"));
+                        writer.println(encode("500 Signup failed"));
+                        System.err.println("500 Signup failed");
+                        return;
                     }
                 }
-
-                // Read data from the client
-                String clientData = reader.readLine();
-                System.out.println("Received from client: " + clientData);
-                System.out.println("Received from client: " + clientData.length());
-
-                // Send a response to the client
-                writer.println("Hello from the server!");
+                request = decode(reader.readLine()).split(" ", 2);
+                requestMethod = request[0];
+                if (requestMethod.equals("read")) {
+                    String titles = mongoConnect.getUserRecordTitles(user);
+                    writer.println(encode(titles));
+                    requestMethod = decode(reader.readLine());
+                    try {
+                        String doc = mongoConnect.getRecord(user.getRecords().get(Integer.parseInt(requestMethod)));
+                        writer.println(encode("200 " + doc));
+                    } catch (Exception e) {
+                        writer.println(encode("400 Invalid input"));
+                        System.err.println("400 Invalid input");
+                    }
+                } else if (requestMethod.equals("create")) {
+                    int res = mongoConnect.updateUserRecords(user.getUsername(),
+                            mongoConnect.insertRecord(user.getUsername(),
+                                    requestBody.split(" ")[0], requestBody.split(" ")[1]));
+                    if (res > 0) {
+                        writer.println(encode("200 Records created: " + res));
+                    } else {
+                        writer.println(encode("500 Records created: " + res));
+                    }
+                } else if (requestMethod.equals("delete")) {
+                    String titles = mongoConnect.getUserRecordTitles(user);
+                    writer.println(encode(titles));
+                    requestMethod = decode(reader.readLine());
+                    try {
+                        int res = mongoConnect.deleteRecord(user.getUsername(),
+                                user.getRecords().get(Integer.parseInt(requestMethod)));
+                        writer.println(encode("200 Records deleted: " + res));
+                    } catch (Exception e) {
+                        writer.println(encode("400 Invalid input"));
+                        System.err.println("400 Invalid input");
+                    }
+                }
 
             } catch (IOException e) {
                 e.printStackTrace();

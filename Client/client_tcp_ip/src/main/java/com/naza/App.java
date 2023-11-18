@@ -16,18 +16,24 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 
 public class App {
-    private static final String SERVER_HOST = "localhost";
-    private static final int SERVER_PORT = 8888;
+    private static String SERVER_HOST = "localhost";
+    private static int SERVER_PORT = 8888;
     private static final String KEYSTORE_PATH = System.getProperty("user.dir") + "/trusted_certs/keystore.jks";
     private static final String KEYSTORE_PASSWORD = "password";
 
     public static void main(String[] args) throws IOException {
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Server host: ");
+        SERVER_HOST = scanner.nextLine();
+        System.out.println("Server port: ");
+        SERVER_PORT = Integer.parseInt(scanner.nextLine());
+
         SSLSocket socket = createSSLSocket();
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)) {
 
-            Scanner scanner = new Scanner(System.in);
             String input;
             String query;
             String[] response;
@@ -39,14 +45,14 @@ public class App {
             input = scanner.nextLine();
 
             System.out.println("Enter username");
-            input = scanner.nextLine();
+            String username = scanner.nextLine();
             System.out.println("Enter password");
-            input = scanner.nextLine();
+            String password = scanner.nextLine();
 
             if (input.equals("1")) {
-                query = String.format("login %s %s", "username", "password");
+                query = String.format("login %s %s", username, password);
             } else if (input.equals("2")) {
-                query = String.format("signup %s %s", "username", "password");
+                query = String.format("signup %s %s", username, password);
             } else {
                 System.err.println("Invalid input");
                 return;
@@ -58,8 +64,8 @@ public class App {
 
             if (responseCode.equals("200")) {
                 System.out.println(responseBody);
-            } else if (responseCode.startsWith("4")) {
-                System.err.println(responseCode);
+            } else if (responseCode.startsWith("4") || responseCode.startsWith("5")) {
+                System.err.println("Error: " + responseCode);
                 System.err.println(responseBody);
                 return;
             } else {
@@ -67,26 +73,31 @@ public class App {
                 return;
             }
 
-            System.out.println("Type '1' for read document, '2' for create document");
+            System.out.println("Type '1' to read a document, '2' to create a document, '3' to delete a document");
             input = scanner.nextLine();
 
             if (input.equals("1")) {
                 writer.println(encode("read"));
-                System.out.println("You have next saved documents: ");
                 responseBody = decode(reader.readLine());
+                if (responseBody.length() < 2) {
+                    System.out.println("You have no saved documents");
+                    return;
+                }
+                System.out.println("You have next saved documents: ");
                 System.out.println(responseBody);
 
-                System.out.println("Enter document id: ");
+                System.out.println("Choose document number[print number]: ");
                 input = scanner.nextLine();
-                query = String.format("document %s", input);
+                query = String.format("%s", input);
                 writer.println(encode(query));
                 response = decode(reader.readLine()).split(" ", 2);
                 responseCode = response[0];
                 responseBody = response[1];
                 if (responseCode.equals("200")) {
                     System.out.println("Got encrypted document");
-                } else if (responseCode.startsWith("4")) {
-                    System.err.println(responseCode);
+                    System.out.println(responseBody);
+                } else if (responseCode.startsWith("4") || responseCode.startsWith("5")) {
+                    System.err.println("Error: " + responseCode);
                     System.err.println(responseBody);
                     return;
                 } else {
@@ -98,16 +109,24 @@ public class App {
                 String privateKey = scanner.nextLine();
                 System.out.println("Enter IV: ");
                 String iv = scanner.nextLine();
-                aes.initFromStrings(encode(privateKey), encode(iv));
+                aes.initFromStrings(privateKey, iv);
                 try {
                     String decryptedDocument = aes.decrypt(responseBody);
                     System.out.println("Decrypted document: ");
                     System.out.println(decryptedDocument);
                 } catch (Exception e) {
                     System.err.println("Decryption Error");
+                    System.err.println(e.getMessage());
+                    traceback: for (StackTraceElement ste : e.getStackTrace()) {
+                        System.err.println(ste);
+                    }
                     return;
                 }
             } else if (input.equals("2")) {
+
+                System.out.println("Enter your title[WILL NOT BE ENCRYPTED]: ");
+                String title = scanner.nextLine();
+                title = title.replace(" ", "_");
                 System.out.println("Enter your text[double press ENTER to stop]: ");
                 String line;
                 StringBuilder sb = new StringBuilder();
@@ -117,16 +136,20 @@ public class App {
                 String text = sb.toString();
                 try {
                     aes.init();
-                    aes.encrypt(text);
-                    writer.println(encode("create " + text));
+                    text = aes.encrypt(text);
+                    writer.println(encode("create " + title + " " + text));
+
                     response = decode(reader.readLine()).split(" ", 2);
                     responseCode = response[0];
                     responseBody = response[1];
 
                     if (responseCode.equals("200")) {
                         System.out.println(responseBody);
-                    } else if (responseCode.startsWith("4")) {
-                        System.err.println(responseCode);
+                        System.out.println(
+                                "Keep these keys safe!!! You will not be able to decrypt your document without them.");
+                        aes.exportKeys();
+                    } else if (responseCode.startsWith("4") || responseCode.startsWith("5")) {
+                        System.err.println("Error: " + responseCode);
                         System.err.println(responseBody);
                         return;
                     } else {
@@ -139,19 +162,42 @@ public class App {
 
                 // realize encryption
 
+            } else if (input.equals("3")) {
+                writer.println(encode("delete"));
+                responseBody = decode(reader.readLine());
+                if (responseBody.length() < 2) {
+                    System.out.println("You have no saved documents");
+                    return;
+                }
+                System.out.println("You have next saved documents: ");
+                System.out.println(responseBody);
+
+                System.out.println("Choose document number[print number]: ");
+                input = scanner.nextLine();
+                query = String.format("%s", input);
+                writer.println(encode(query));
+                response = decode(reader.readLine()).split(" ", 2);
+                responseCode = response[0];
+                responseBody = response[1];
+                if (responseCode.equals("200")) {
+                    System.out.println("Success!");
+                    System.out.println(responseBody);
+                } else if (responseCode.startsWith("4") || responseCode.startsWith("5")) {
+                    System.err.println("Error: " + responseCode);
+                    System.err.println(responseBody);
+                    return;
+                } else {
+                    System.err.println("Unknown error");
+                    return;
+                }
+
             } else {
                 System.out.println("Invalid input");
                 return;
             }
 
-            // Send data to the server
-            writer.println("a9inoaisndv\nasinciasd");
-
-            // Receive response from the server
-            String serverResponse = reader.readLine();
-            System.out.println("Received from server: " + serverResponse);
-
         } finally {
+            scanner.close();
             socket.close();
         }
     }
