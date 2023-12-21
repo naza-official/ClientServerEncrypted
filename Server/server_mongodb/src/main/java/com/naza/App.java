@@ -109,45 +109,53 @@ public class App {
                         return;
                     }
                 }
-                request = decode(reader.readLine()).split(" ", 2);
-                requestMethod = request[0];
-                if (requestMethod.equals("read")) {
-                    String titles = mongoConnect.getUserRecordTitles(user);
-                    writer.println(encode(titles));
-                    requestMethod = decode(reader.readLine());
-                    try {
-                        String doc = mongoConnect.getRecord(user.getRecords().get(Integer.parseInt(requestMethod)));
-                        writer.println(encode("200 " + doc));
-                    } catch (Exception e) {
-                        writer.println(encode("400 Invalid input"));
-                        System.err.println("400 Invalid input");
-                    }
-                } else if (requestMethod.equals("create")) {
-                    requestBody = request[0];
-                    int res = mongoConnect.updateUserRecords(user.getUsername(),
-                            mongoConnect.insertRecord(user.getUsername(),
-                                    requestBody.split(" ")[0], requestBody.split(" ")[1]));
-                    if (res > 0) {
-                        writer.println(encode("200 Records created: " + res));
-                    } else {
-                        writer.println(encode("500 Records created: " + res));
-                    }
-                } else if (requestMethod.equals("delete")) {
-                    String titles = mongoConnect.getUserRecordTitles(user);
-                    writer.println(encode(titles));
-                    requestMethod = decode(reader.readLine());
-                    try {
-                        int res = mongoConnect.deleteRecord(user.getUsername(),
-                                user.getRecords().get(Integer.parseInt(requestMethod)));
-                        writer.println(encode("200 Records deleted: " + res));
-                    } catch (Exception e) {
-                        writer.println(encode("400 Invalid input"));
-                        System.err.println("400 Invalid input");
+                while (true) {
+                    request = decode(reader.readLine()).split(" ", 2);
+                    requestMethod = request[0];
+                    if (requestMethod.equals("read")) {
+                        String titles = mongoConnect.getUserRecordTitles(user);
+                        writer.println(encode(titles));
+                        requestMethod = decode(reader.readLine());
+                        try {
+                            String doc = mongoConnect.getRecord(user.getRecords().get(Integer.parseInt(requestMethod)));
+                            writer.println(encode("200 " + doc));
+                        } catch (Exception e) {
+                            writer.println(encode("400 Invalid input"));
+                            System.err.println("400 Invalid input");
+                        }
+                    } else if (requestMethod.equals("create")) {
+                        requestBody = request[1];
+                        int res = mongoConnect.updateUserRecords(user.getUsername(),
+                                mongoConnect.insertRecord(user.getUsername(),
+                                        requestBody.split(" ")[0], requestBody.split(" ")[1]));
+                        if (res > 0) {
+                            writer.println(encode("200 Records created: " + res));
+                        } else {
+                            writer.println(encode("500 Records created: " + res));
+                        }
+                    } else if (requestMethod.equals("delete")) {
+                        String titles = mongoConnect.getUserRecordTitles(user);
+                        writer.println(encode(titles));
+                        requestMethod = decode(reader.readLine());
+                        try {
+                            int res = mongoConnect.deleteRecord(user.getUsername(),
+                                    user.getRecords().get(Integer.parseInt(requestMethod)));
+                            writer.println(encode("200 Records deleted: " + res));
+                        } catch (Exception e) {
+                            writer.println(encode("400 Invalid input"));
+                            System.err.println("400 Invalid input");
+                        }
                     }
                 }
 
             } catch (IOException e) {
                 e.printStackTrace();
+            } catch (NullPointerException e) {
+                try {
+                    clientSocket.close();
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
             } finally {
                 try {
                     clientSocket.close();
