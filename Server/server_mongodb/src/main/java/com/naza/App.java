@@ -123,6 +123,7 @@ public class App {
                         System.err.println("400 Invalid input");
                     }
                 } else if (requestMethod.equals("create")) {
+                    requestBody = request[0];
                     int res = mongoConnect.updateUserRecords(user.getUsername(),
                             mongoConnect.insertRecord(user.getUsername(),
                                     requestBody.split(" ")[0], requestBody.split(" ")[1]));
